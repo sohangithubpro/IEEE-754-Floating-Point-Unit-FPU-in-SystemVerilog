@@ -1,4 +1,4 @@
-# IEEE-754-Floating-Point-Unit-FPU-in-SystemVerilog
+# IEEE-754-Floating-Point-Unit(FPU)-in-SystemVerilog
 
 This repository contains a behavioral model of a **32-bit IEEE-754 compliant Floating Point Unit (FPU)** written in SystemVerilog. The module supports basic arithmetic operations: **addition, subtraction, multiplication, and division** on 32-bit floating point inputs as per IEEE-754 format.
 
