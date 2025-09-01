@@ -38,6 +38,7 @@ Normalize	Shift result to normalize leading 1
 Round	Apply IEEE-754 GRS rounding
 Writeback	Reconstruct 32-bit float result {sign, exponent, mantissa}
 3. Operation Details
+
 ➕ Addition & ➖ Subtraction
 
 Align exponents via right-shift
