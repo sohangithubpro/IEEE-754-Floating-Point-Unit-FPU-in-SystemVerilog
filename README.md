@@ -1,67 +1,92 @@
-# IEEE-754-Floating-Point-Unit(FPU)-in-SystemVerilog
+# IEEE-754 Floating Point Unit (FPU) — FSM-Based Design in SystemVerilog
 
-This repository contains a behavioral model of a **32-bit IEEE-754 compliant Floating Point Unit (FPU)** written in SystemVerilog. The module supports basic arithmetic operations: **addition, subtraction, multiplication, and division** on 32-bit floating point inputs as per IEEE-754 format.
+This repository contains a synthesizable, FSM-based 32-bit IEEE-754 compliant Floating Point Unit (FPU) implemented in SystemVerilog. The design supports the four basic arithmetic operations — addition, subtraction, multiplication, and division — and follows a structured Finite State Machine (FSM) model to improve synthesis feasibility and timing closure.
 
-## 🔧 Features
+🚀 Key Features
 
-- **IEEE-754 Single Precision Support (32-bit)**
-- Handles:
-  - Floating-point **addition**
-  - Floating-point **subtraction**
-  - Floating-point **multiplication**
-  - Floating-point **division**
-- Implements:
-  - **Exponent alignment** for addition/subtraction
-  - **Mantissa multiplication and division** with normalization
-  - **Rounding logic** using Guard (G), Round (R), and Sticky (S) bits
-  - Partial **normalization and exponent adjustment** post operation
-- Designed for simulation and prototyping purposes.
+✅ IEEE-754 Single Precision (32-bit) support
 
-## 🧠 Operation Overview
+✅ FSM-based multi-cycle design (Idle → Prepare → Compute → Normalize → Round → Writeback)
 
-IEEE-754 represents a 32-bit float as:
+✅ Synthesizable structure using sequential (always_ff) and combinational (always_comb) blocks
 
-| Sign (1 bit) | Exponent (8 bits) | Mantissa (23 bits) |
+✅ Handles core floating-point operations:
 
-markdown
-Copy code
+Addition (op = 00)
 
-The FPU module follows the typical flow for each operation:
+Subtraction (op = 01)
 
-### 1. Extraction
-- Extracts the sign, exponent, and mantissa from input operands.
-- Implicit leading `1` is added to the mantissa to form a 24-bit number.
+Multiplication (op = 10)
 
-### 2. Operation Cases
+Division (op = 11)
 
-- **Addition/Subtraction**
-  - Aligns exponents by right-shifting the smaller operand’s mantissa.
-  - Performs the operation based on the signs and magnitudes.
+✅ Built-in mantissa alignment, normalization, and GRS-based rounding
 
-- **Multiplication**
-  - Multiplies 24-bit mantissas → 48-bit product.
-  - Adds exponents and subtracts bias (127).
-  - Normalizes the result.
-  - Applies rounding logic based on G/R/S bits.
+📚 Operation Flow
+1. Input Preparation
 
-- **Division**
-  - Shifts numerator mantissa left by 24 bits for precision.
-  - Divides 48-bit numerator by 24-bit denominator.
-  - Subtracts exponents and adds bias (127).
-  - Normalizes and rounds the result.
+Extracts sign, exponent, and mantissa from both operands a and b
 
-### 3. Rounding
-Rounding is done using GRS (Guard, Round, Sticky) method:
+Prepends the implicit 1 to mantissas → converts them to 24-bit
 
-if (G == 1 && (R == 1 || S == 1))
-mantissa += 1
+2. FSM Control Flow
+State	Functionality
+Idle	Wait for perm signal to start operation
+Prepare	Decode input fields, align mantissas
+Compute	Perform selected arithmetic operation
+Normalize	Shift result to normalize leading 1
+Round	Apply IEEE-754 GRS rounding
+Writeback	Reconstruct 32-bit float result {sign, exponent, mantissa}
+3. Operation Details
+➕ Addition & ➖ Subtraction
 
-csharp
-Copy code
+Align exponents via right-shift
 
-This ensures correct rounding to the nearest even.
+Add or subtract mantissas
 
-### 4. Final Assembly
-Final output is reconstructed using:
-```verilog
-out = {sign, exp_result, mantissa_rounded};
+Forward result to rounding
+
+✖️ Multiplication
+
+Multiply 24-bit mantissas → 48-bit product
+
+Add exponents and subtract bias (127)
+
+Normalize product
+
+Apply GRS rounding
+
+➗ Division
+
+Shift numerator (mant_a) left by 24 bits → 48-bit precision
+
+Divide by mant_b
+
+Subtract exponents and add bias (127)
+
+Normalize and round
+
+🔄 Rounding Logic (GRS Method)
+if (G == 1 && (R == 1 || S != 0))
+    mantissa += 1;
+
+
+G = Guard bit (next to LSB)
+
+R = Round bit (after G)
+
+S = Sticky bit (OR of all lower bits)
+
+Ensures round-to-nearest-even behavior per IEEE-754.
+
+🛠️ Design Highlights
+
+Written in SystemVerilog using always_ff and always_comb
+
+Supports multi-cycle computation, allowing:
+
+Reduced combinational path delay
+
+Easier timing closure for synthesis on FPGAs or ASICs
+
+Designed with clarity and modularity, suitable for integration into a RISC-V CPU or SoC
