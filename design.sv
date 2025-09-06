@@ -9,10 +9,10 @@ module fpu(clk,rst,a,b,perm,op,out);
   output logic [31:0] out;
   
   //define reg which keep of track of the operations being performed in each state
-  logic prep,comp,norm,round,wb;
+  logic prep,comp,norm,round,wb,edge1;
   
   //define states
-  typedef enum logic [3:0] {Idle, Prepare, Compute, Normalize, Round, Writeback} state_type;
+  typedef enum logic [3:0] {Idle, Prepare, Edge, Compute, Normalize, Round, Writeback} state_type;
   state_type state;
   state_type next_state;
   
@@ -33,7 +33,8 @@ module fpu(clk,rst,a,b,perm,op,out);
   always_comb begin
     case(state)
       Idle: next_state=(perm==1)?Prepare:Idle;
-      Prepare: next_state=(prep==1)?Compute:Prepare;
+      Prepare: next_state=(prep==1 && (op==2'b00 || op==2'b01))?Compute:Edge;
+      Edge: next_state=(a[30:0] !=0 && b[30:0] !=0)?Compute:(edge1==1)?Writeback:Edge;
       Compute: next_state=((op==2'b10 || op==2'b11) & (comp==1))?Normalize: (comp==1)?Writeback:Compute;
       Normalize: next_state=(norm==1)?Round:Normalize;
       Round: next_state=(round==1)?Writeback:Round;
@@ -105,8 +106,36 @@ module fpu(clk,rst,a,b,perm,op,out);
               all_mantb=(exp_a>exp_b)?(mant_b >>(exp_a-exp_b)):mant_b;
               $display("mant_a is %24b",mant_a);
               $display("mant_b is %24b",mant_b);
-              sign=(a[0]==1 || b[0] == 1)?1:0;
               prep=1;
+            end
+            
+            //detect Edge
+            Edge: begin
+              //edge case for multiplication (+0 x b or a x +0)
+              if(op==2'b10 && (a[30:0]==0 || b[30:0]==0))
+                begin
+                  rounded_result=24'h0;
+                  exp_result=0;
+                  sign=a[31]^b[31];
+                  edge1=1;
+                end
+              
+              //edge case detection for division (0/b)
+              else if(op==2'b11 && (a[30:0]==0 && b[30:0]!=0))
+                begin
+                  rounded_result=0;
+                  exp_result=0;
+                  sign=a[31]^b[31];
+                  edge1=1;
+                end
+            //edge case detection for division(a/0)
+            else if(op==2'b11 && (a[30:0] !=0 && b[30:0]==0))
+              begin
+                rounded_result=0;
+                exp_result=8'hFF; //infinity condition
+                sign=a[31]^b[31];
+                edge1=1;
+              end
             end
             
             //perform the operation 
@@ -116,23 +145,53 @@ module fpu(clk,rst,a,b,perm,op,out);
                   sum=(a[0]==b[0])? all_manta+all_mantb : all_manta-all_mantb;
                   $display("Sum is %24b",sum);
                   rounded_result<=sum[22:0];
+                  exp_result=(exp_a>exp_b)?exp_a:exp_b;
+                  //a+b
+                  if(a[0]==0 && b[0]==0)
+                    sign=0;
+                  //a+(-b) (all_manta>all_mantb)
+                  else if(a[0]==0 && b[0]==1 && (all_manta>all_mantb))
+                    sign=0;
+                  //a+(-b) //all_mantb>all_mantb
+                  else if(a[0]==0 && b[0]==1 && (all_mantb>all_manta))
+                    sign=1;
+                  //-a+(-b)
+                  else if(a[0]==1 && b[0]==1)
+                    sign=1;
                   comp=1;
                 end
                 2'b01: begin
                   diff=(all_manta>all_mantb)?all_manta-all_mantb : all_mantb-all_mantb;
                   $display("difference is %24b",diff);
                   rounded_result=diff[22:0];
+                  exp_result=(exp_a>exp_b)?exp_a:exp_b;
+                  //a-b, a>b
+                  if(all_manta>all_mantb)
+                    sign=0;
+                  //a-b, b>a
+                  else if(all_mantb>all_manta)
+                    sign=1;
+                  //a-(-b)
+                  else if(b[0]==1 && a[0]==0)
+                    sign=0;
+                  //-a-b
+                  else if(a[0]==1 && b[0]==0)
+                    sign=1;
                   comp=1;
                 end
                 2'b10: begin
                   proddiv=mant_a*mant_b;
                   $display("prod is %48b",proddiv);
+                  exp_result=(exp_a>exp_b)?exp_a-exp_b+127:exp_b-exp_a+127;
+                  sign=a[0]^b[0];
                   comp=1;
                 end
                 2'b11: begin
                   dividend=mant_a<<24;
                   proddiv=dividend/mant_b;
                   $display("quotient is %48b",proddiv);
+                  exp_result=(exp_a>exp_b)?exp_a-exp_b+127:exp_b-exp_a+127;
+                  sign=a[0]^b[0];
                   comp=1;
                 end
               endcase
@@ -173,7 +232,8 @@ module fpu(clk,rst,a,b,perm,op,out);
             end
             
             Writeback: begin
-              exp_result = (exp_a > exp_b)? exp_a-exp_b+127 :exp_b-exp_a+127;
+              $display("a is %32b",a);
+              $display("b is %32b",b);
               out={sign,exp_result,rounded_result};
               $display("actual output is %32b",out);
               wb=1;
