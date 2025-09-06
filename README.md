@@ -2,92 +2,99 @@
 
 This repository contains a synthesizable, FSM-based 32-bit IEEE-754 compliant Floating Point Unit (FPU) implemented in SystemVerilog. The design supports the four basic arithmetic operations — addition, subtraction, multiplication, and division — and follows a structured Finite State Machine (FSM) model to improve synthesis feasibility and timing closure.
 
-🚀 Key Features
+## 🚀 Key Features
 
-✅ IEEE-754 Single Precision (32-bit) support
+- ✅ IEEE-754 Single Precision (32-bit) support
+- ✅ FSM-based multi-cycle design: `Idle → Prepare → Compute → Normalize → Round → Writeback`
+- ✅ Synthesizable structure using sequential (`always_ff`) and combinational (`always_comb`) blocks
+- ✅ Supports the following operations:
+  - Addition (`op = 00`)
+  - Subtraction (`op = 01`)
+  - Multiplication (`op = 10`)
+  - Division (`op = 11`)
+- ✅ Includes mantissa alignment, normalization, and IEEE-754 GRS rounding
 
-✅ FSM-based multi-cycle design (Idle → Prepare → Compute → Normalize → Round → Writeback)
+## 📚 Operation Flow
 
-✅ Synthesizable structure using sequential (always_ff) and combinational (always_comb) blocks
+### 1. Input Preparation
 
-✅ Handles core floating-point operations:
+- Extracts sign, exponent, and mantissa from both operands `a` and `b`
+- Prepends the implicit 1 to each mantissa → 24-bit representation
 
-Addition (op = 00)
+### 2. FSM Control Flow
 
-Subtraction (op = 01)
+| State       | Functionality                              |
+|-------------|---------------------------------------------|
+| Idle        | Waits for `perm` signal to start operation |
+| Prepare     | Decodes inputs, aligns mantissas           |
+| Edge        | Handles special edge cases                 |
+| Compute     | Performs selected arithmetic operation     |
+| Normalize   | Normalizes the result (leading 1)          |
+| Round       | Applies GRS-based rounding logic           |
+| Writeback   | Reconstructs 32-bit output {sign, exp, mant} |
 
-Multiplication (op = 10)
+---
 
-Division (op = 11)
+## ➕ Addition & ➖ Subtraction (`op = 00 or 01`)
 
-✅ Built-in mantissa alignment, normalization, and GRS-based rounding
+- Align exponents via right-shift of mantissas
+- Perform `a ± b` based on sign bits
+- Determine resulting sign based on operand comparison
+- Forward result to rounding unit
 
-📚 Operation Flow
-1. Input Preparation
+---
 
-Extracts sign, exponent, and mantissa from both operands a and b
+## ✖️ Multiplication (`op = 10`)
 
-Prepends the implicit 1 to mantissas → converts them to 24-bit
+- Multiply two 24-bit mantissas → 48-bit product
+- Add exponents and subtract bias (127)
+- Normalize the result
+- Apply GRS rounding logic
 
-2. FSM Control Flow
-State	Functionality
-Idle	Wait for perm signal to start operation
-Prepare	Decode input fields, align mantissas
-Compute	Perform selected arithmetic operation
-Normalize	Shift result to normalize leading 1
-Round	Apply IEEE-754 GRS rounding
-Writeback	Reconstruct 32-bit float result {sign, exponent, mantissa}
-3. Operation Details
+---
 
-➕ Addition & ➖ Subtraction
+## ➗ Division (`op = 11`)
 
-Align exponents via right-shift
+- Shift numerator `mant_a` left by 24 bits → get 48-bit precision
+- Perform integer division: `mant_a / mant_b`
+- Subtract exponents and add bias (127)
+- Normalize and round the result
 
-Add or subtract mantissas
+---
 
-Forward result to rounding
+## ⚠️ Edge Case Handling
 
-✖️ Multiplication
+Handled in a dedicated `Edge` FSM state without disturbing the normal datapath flow:
 
-Multiply 24-bit mantissas → 48-bit product
+- `a × 0` or `0 × b` → result = 0  
+- `a ÷ 0` → result = ±∞ (currently outputs garbage — not handled properly)  
+- `0 ÷ b` → result = 0  
 
-Add exponents and subtract bias (127)
+> Edge cases are detected by checking:  
+> `a[30:0] == 0` **or** `b[30:0] == 0`
 
-Normalize product
+---
 
-Apply GRS rounding
+## 📏 Rounding Logic — GRS (Guard, Round, Sticky)
 
-➗ Division
+Rounding follows the IEEE-754 "round-to-nearest-even" rule:
 
-Shift numerator (mant_a) left by 24 bits → 48-bit precision
-
-Divide by mant_b
-
-Subtract exponents and add bias (127)
-
-Normalize and round
-
-🔄 Rounding Logic (GRS Method)
+```systemverilog
 if (G == 1 && (R == 1 || S != 0))
     mantissa += 1;
+```
 
+- **G (Guard bit)**: Bit next to LSB of result
+- **R (Round bit)**: Bit after G
+- **S (Sticky bit)**: OR of all remaining lower bits
 
-G = Guard bit (next to LSB)
+✅ Ensures IEEE-compliant rounding while maintaining accuracy across all arithmetic operations
 
-R = Round bit (after G)
+---
 
-S = Sticky bit (OR of all lower bits)
+## ⚡ Design Notes
 
-Ensures round-to-nearest-even behavior per IEEE-754.
-
-🛠️ Design Highlights
-
-Written in SystemVerilog using always_ff and always_comb
-
-Supports multi-cycle computation, allowing:
-
-Reduced combinational path delay
-
-Easier timing closure for synthesis on FPGAs or ASICs
-
-Designed with clarity and modularity, suitable for integration into a RISC-V CPU or SoC
+- Written entirely in SystemVerilog
+- Uses both `always_ff` (for sequential logic) and `always_comb` (for combinational logic)
+- Modular state-based control flow makes timing closure and debugging easier
+- Can be integrated into a custom RISC-V processor or SoC environment
